@@ -1,5 +1,3 @@
-# Advent of Code 2019
+# Kafka Node
 
-Solutions to the [Advent of Code 2019](https://adventofcode.com/)
-
-Check the src folder for progress day by day
+Some code to test how to use Kafka from Node
