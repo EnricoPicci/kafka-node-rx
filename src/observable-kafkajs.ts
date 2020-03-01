@@ -1,5 +1,5 @@
 import { from, forkJoin, Observable, Subscriber, TeardownLogic } from 'rxjs';
-import { map, expand, filter, delay, first, tap, concatMap } from 'rxjs/operators';
+import { map, expand, filter, delay, first, tap, concatMap, mergeMap } from 'rxjs/operators';
 
 import { KafkaConfig, ITopicConfig, Kafka, Admin, ResourceConfigQuery, Consumer, KafkaMessage } from 'kafkajs';
 
@@ -133,27 +133,70 @@ export const subscribeConsumerToTopic = (consumer: Consumer, topics: string[]) =
     return forkJoin(topics.map(topic => consumer.subscribe({ topic })));
 };
 
-export type ConsumerMessage = { topic: string; partition: any; message: KafkaMessage };
+export type ConsumerMessage = {
+    topic: string;
+    partition: any;
+    message: KafkaMessage;
+    done: () => void;
+};
 export const consumerMessages = (consumer: Consumer) => {
     return new Observable<ConsumerMessage>(
         (subscriber: Subscriber<ConsumerMessage>): TeardownLogic => {
             consumer.run({
+                autoCommit: false,
                 eachMessage: async ({ topic, partition, message }) => {
-                    console.log({
-                        key: message.key.toString(),
-                        value: message.value.toString(),
-                        headers: message.headers,
-                        topic,
-                        partition,
-                    });
-                    let g = 1;
-                    console.log('Start');
-                    for (let i = 0; i < 1000000000; i++) {
-                        g = (g / i) * (i + 1);
-                    }
-                    subscriber.next({ topic, partition, message });
+                    // console.log({
+                    //     key: message.key.toString(),
+                    //     value: message.value.toString(),
+                    //     headers: message.headers,
+                    //     topic,
+                    //     partition,
+                    // });
+                    console.log('>>>>>>>>>', message.key.toString());
+                    const offset = (parseInt(message.offset) + 1).toString();
+                    const done = () => {
+                        consumer.commitOffsets([{ topic, partition, offset }]);
+                    };
+                    subscriber.next({ topic, partition, message, done });
                 },
             });
         },
     );
+};
+
+export type MessageProcessingResult<T> = { message: ConsumerMessage; result: T };
+export type Processor<T> = (message: ConsumerMessage) => Observable<MessageProcessingResult<T>>;
+
+export const consumerConcurrentlyProcessedMessages = <T>(
+    consumer: Consumer,
+    processor: Processor<T>,
+    concurrency?: number,
+) => {
+    const _mergeMap = concurrency
+        ? mergeMap((message: ConsumerMessage) => processor(message), concurrency)
+        : mergeMap((message: ConsumerMessage) => processor(message));
+    return consumerMessages(consumer).pipe(
+        _mergeMap,
+        tap(resp => {
+            resp.message.done();
+        }),
+    );
+};
+
+export const consumerSequentiallyProcessedMessages = <T>(consumer: Consumer, processor: Processor<T>) => {
+    return consumerConcurrentlyProcessedMessages(consumer, processor, 1);
+    // return consumerMessages(consumer).pipe(
+    //     concatMap(message =>
+    //         of(message).pipe(
+    //             concatMap(message => processor(message)),
+    //             tap(resp => {
+    //                 if (resp['result']) {
+    //                     (resp['message'] as ConsumerMessage).done();
+    //                 } else {
+    //                     (resp as ConsumerMessage).done();
+    //                 }
+    //             }),
+    //         ),
+    //     ),
+    // );
 };
