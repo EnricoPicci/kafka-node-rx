@@ -1,19 +1,24 @@
 import { concatMap, tap } from 'rxjs/operators';
-import { Admin } from 'kafkajs';
-import { connectAdminClient, nonExistingTopics } from './observable-kafkajs';
+import { ResourceTypes, Admin } from 'kafkajs';
+import { describeConfigs, connectAdminClient } from '../observable-kafkajs/observable-kafkajs';
 
 const kafkaConfig = {
     clientId: 'my-app',
     brokers: ['localhost:9092'],
 };
 
-const topicNames = ['kafkajs-topic-1-1', 'kafkajs-topic-2-1'];
+const resources = [
+    {
+        type: ResourceTypes.TOPIC,
+        name: 'topic-name',
+    },
+];
 
 let _adminClient: Admin;
 connectAdminClient(kafkaConfig)
     .pipe(
         tap(adminClient => (_adminClient = adminClient)),
-        concatMap(() => nonExistingTopics(_adminClient, topicNames)),
+        concatMap(() => describeConfigs(_adminClient, resources)),
     )
     .subscribe({
         next: data => console.log('next in subscribe', data),

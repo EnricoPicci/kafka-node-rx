@@ -1,5 +1,5 @@
-import { Observable, of } from 'rxjs';
-import { tap, map, delay, switchMap } from 'rxjs/operators';
+import { Observable } from 'rxjs';
+import { tap, map, switchMap, filter, share, takeUntil, finalize, mergeMap } from 'rxjs/operators';
 
 import { Consumer, KafkaConfig } from 'kafkajs';
 import {
@@ -7,59 +7,58 @@ import {
     subscribeConsumerToTopic,
     consumerMessages,
     ConsumerMessage,
-    consumerSequentiallyProcessedMessages,
-    consumerConcurrentlyProcessedMessages,
-    Processor,
-} from './observable-kafkajs';
+} from './observable-kafkajs/observable-kafkajs';
+import { COMMANDS } from './command';
 
+export type MessageProcessingResult<T> = { message: ConsumerMessage; result: T };
+export type Processor<T> = (message: ConsumerMessage) => Observable<MessageProcessingResult<T>>;
 export class SinkForOneTopic {
-    // private _consumer$: Observable<Consumer>;
     private _consumer: Consumer;
     private _connectAndSubscribe$: Observable<void[]>;
+    private _messages$: Observable<ConsumerMessage>;
+    private _exit$: Observable<any>;
 
-    constructor(private name: string, config: KafkaConfig, private groupId: string, private topicName: string) {
+    constructor(
+        private name: string,
+        config: KafkaConfig,
+        private groupId: string,
+        private topicName: string,
+        private controllerTopicName: string,
+    ) {
         this._connectAndSubscribe$ = connectConsumer(config, this.groupId).pipe(
             tap(consumer => (this._consumer = consumer)),
-            switchMap(consumer => subscribeConsumerToTopic(consumer, [this.topicName])),
+            switchMap(consumer => subscribeConsumerToTopic(consumer, [this.topicName, this.controllerTopicName])),
+            share(),
         );
-    }
 
-    message() {
-        return this._connectAndSubscribe$.pipe(
+        this._messages$ = this._connectAndSubscribe$.pipe(
             switchMap(() => consumerMessages(this._consumer)),
-            map(message => ({ ...message, consumerName: this.name })),
+            share(),
         );
-    }
-    sequentialMessage() {
-        const processor = (message: ConsumerMessage) => {
-            return of(message).pipe(
-                delay(5000),
-                map(message => ({ message, result: 'Processed' })),
-            );
-        };
-        return this._connectAndSubscribe$.pipe(
-            switchMap(() => consumerSequentiallyProcessedMessages(this._consumer, processor)),
-            map(message => ({ ...message, consumerName: this.name })),
-        );
-    }
-    concurrentMessage(concurrency: number) {
-        const processor = (message: ConsumerMessage) => {
-            return of(message).pipe(
-                delay(5000),
-                map(message => ({ message, result: 'Processed' })),
-            );
-        };
-        return this._connectAndSubscribe$.pipe(
-            switchMap(() => consumerConcurrentlyProcessedMessages(this._consumer, processor, concurrency)),
-            map(message => ({ ...message, consumerName: this.name })),
+
+        this._exit$ = this._messages$.pipe(
+            filter(message => message.topic === controllerTopicName),
+            filter(message => message.kafkaMessage.value.toString() === COMMANDS.exit),
         );
     }
 
     processMessages<T>(processor: Processor<T>, concurrency: number) {
-        return this._connectAndSubscribe$.pipe(
-            switchMap(() => consumerConcurrentlyProcessedMessages<T>(this._consumer, processor, concurrency)),
-            map(message => ({ ...message, consumerName: this.name })),
+        const _mergeMap = concurrency
+            ? mergeMap((message: ConsumerMessage) => processor(message), concurrency)
+            : mergeMap((message: ConsumerMessage) => processor(message));
+        return this._messages$.pipe(
+            filter(message => message.topic === this.topicName),
+            _mergeMap,
+            map(procResult => ({ ...procResult, consumerName: this.name })),
+            tap(resp => {
+                resp.message.done();
+            }),
+            takeUntil(this._exit$),
+            finalize(() => process.exit(10)),
         );
+    }
+    processMessagesSequentially<T>(processor: Processor<T>) {
+        return this.processMessages<T>(processor, 1);
     }
 
     disconnect() {

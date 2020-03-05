@@ -1,6 +1,6 @@
 import { KafkaConfig, Producer, ITopicConfig } from 'kafkajs';
 import { Observable, interval } from 'rxjs';
-import { connectProducer, connectAdminClient, deleteCreateTopics } from './observable-kafkajs';
+import { connectProducer, connectAdminClient, deleteCreateTopics } from './observable-kafkajs/observable-kafkajs';
 import { concatMap, tap, take, map } from 'rxjs/operators';
 
 export class SourceForOneTopic {
@@ -28,19 +28,6 @@ export class SourceForOneTopic {
                   tap(producer => (this._producer = producer)),
               )
             : connectProducer(config).pipe(tap(producer => (this._producer = producer)));
-        // this._producer$ = connectAdminClient(config).pipe(
-        //     concatMap(adminClient =>
-        //         deleteCreateTopics(adminClient, [this.outputTopic]).pipe(
-        //             map(topicsCreated => ({ topicsCreated, adminClient })),
-        //         ),
-        //     ),
-        //     tap(({ topicsCreated, adminClient }) => {
-        //         topicsCreated.map(t => console.log(`Topic ${t} created`));
-        //         adminClient.disconnect();
-        //     }),
-        //     concatMap(() => connectProducer(config)),
-        //     tap(producer => (this._producer = producer)),
-        // );
     }
 
     sendMessages() {

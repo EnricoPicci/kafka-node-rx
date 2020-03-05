@@ -1,5 +1,5 @@
 import { ITopicConfig, Admin } from 'kafkajs';
-import { connectAdminClient, deleteTopics } from './observable-kafkajs';
+import { connectAdminClient, deleteTopics, createTopics } from '../observable-kafkajs/observable-kafkajs';
 import { concatMap, tap } from 'rxjs/operators';
 
 const kafkaConfig = {
@@ -28,9 +28,11 @@ connectAdminClient(kafkaConfig)
                 topics.map(t => t.topic),
             ),
         ),
+        tap(topicsDeleted => console.log('Topics deleted', topicsDeleted)),
+        concatMap(() => createTopics(_adminClient, topics)),
     )
     .subscribe({
-        next: data => console.log('topics deleted', data),
+        next: data => console.log('Topics created', data),
         error: err => {
             console.error(err);
             _adminClient.disconnect();

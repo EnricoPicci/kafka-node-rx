@@ -1,5 +1,5 @@
 import { ITopicConfig, Admin } from 'kafkajs';
-import { createTopics, connectAdminClient } from './observable-kafkajs';
+import { createTopics, connectAdminClient } from '../observable-kafkajs/observable-kafkajs';
 import { concatMap, tap } from 'rxjs/operators';
 
 // import { createTopics} from './observable-kafkajs'

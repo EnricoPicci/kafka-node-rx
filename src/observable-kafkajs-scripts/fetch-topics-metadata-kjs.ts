@@ -1,6 +1,6 @@
 import { concatMap, tap } from 'rxjs/operators';
 import { Admin } from 'kafkajs';
-import { connectAdminClient, fetchConsumerGroupOffsets } from './observable-kafkajs';
+import { connectAdminClient, fetchTopicMetadata } from '../observable-kafkajs/observable-kafkajs';
 
 const kafkaConfig = {
     clientId: 'my-app',
@@ -11,10 +11,14 @@ let _adminClient: Admin;
 connectAdminClient(kafkaConfig)
     .pipe(
         tap(adminClient => (_adminClient = adminClient)),
-        concatMap(() => fetchConsumerGroupOffsets(_adminClient, 'Group 1', 'TopicForProd')),
+        concatMap(() => fetchTopicMetadata(_adminClient)),
     )
     .subscribe({
-        next: data => data.forEach(d => console.log('Consumer Group Offset', d)),
+        next: ({ topics }) =>
+            console.log(
+                'next in subscribe',
+                topics.map(t => t.name),
+            ),
         error: err => {
             console.error(err);
             _adminClient.disconnect();

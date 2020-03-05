@@ -136,7 +136,7 @@ export const subscribeConsumerToTopic = (consumer: Consumer, topics: string[]) =
 export type ConsumerMessage = {
     topic: string;
     partition: any;
-    message: KafkaMessage;
+    kafkaMessage: KafkaMessage;
     done: () => void;
 };
 export const consumerMessages = (consumer: Consumer) => {
@@ -152,51 +152,14 @@ export const consumerMessages = (consumer: Consumer) => {
                     //     topic,
                     //     partition,
                     // });
-                    console.log('>>>>>>>>>', message.key.toString());
+                    console.log('>>>>>>>>>', message.key?.toString(), message.value?.toString());
                     const offset = (parseInt(message.offset) + 1).toString();
                     const done = () => {
                         consumer.commitOffsets([{ topic, partition, offset }]);
                     };
-                    subscriber.next({ topic, partition, message, done });
+                    subscriber.next({ topic, partition, kafkaMessage: message, done });
                 },
             });
         },
     );
-};
-
-export type MessageProcessingResult<T> = { message: ConsumerMessage; result: T };
-export type Processor<T> = (message: ConsumerMessage) => Observable<MessageProcessingResult<T>>;
-
-export const consumerConcurrentlyProcessedMessages = <T>(
-    consumer: Consumer,
-    processor: Processor<T>,
-    concurrency?: number,
-) => {
-    const _mergeMap = concurrency
-        ? mergeMap((message: ConsumerMessage) => processor(message), concurrency)
-        : mergeMap((message: ConsumerMessage) => processor(message));
-    return consumerMessages(consumer).pipe(
-        _mergeMap,
-        tap(resp => {
-            resp.message.done();
-        }),
-    );
-};
-
-export const consumerSequentiallyProcessedMessages = <T>(consumer: Consumer, processor: Processor<T>) => {
-    return consumerConcurrentlyProcessedMessages(consumer, processor, 1);
-    // return consumerMessages(consumer).pipe(
-    //     concatMap(message =>
-    //         of(message).pipe(
-    //             concatMap(message => processor(message)),
-    //             tap(resp => {
-    //                 if (resp['result']) {
-    //                     (resp['message'] as ConsumerMessage).done();
-    //                 } else {
-    //                     (resp as ConsumerMessage).done();
-    //                 }
-    //             }),
-    //         ),
-    //     ),
-    // );
 };
